@@ -62,7 +62,7 @@ export function ActivityItem({ item }: Props) {
             <span className="truncate max-w-[200px]">{item.actor_name}</span>
           )}
           {item.actor_name && <span>·</span>}
-          <span>{formatDate(item.trade_date)}</span>
+          <span>{formatDate(item.trade_date ?? item.filed_date)}</span>
           {item.value_usd && (
             <>
               <span>·</span>
