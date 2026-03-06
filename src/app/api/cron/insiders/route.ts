@@ -1,11 +1,14 @@
 // Vercel Cron: Fetch insider trades (Form 4 filings) via SEC EDGAR — FREE
-// Form 4 = executives, directors, and 10%+ shareholders reporting stock transactions
-// Must be filed within 2 business days — near real-time disclosure.
-// Schedule: every 20 minutes during market hours weekdays (see vercel.json)
+// Parses actual Form 4 XML filings for full detail:
+//   owner name, officer title, shares, price per share, transaction date
+// Schedule: daily at 5pm weekdays (see vercel.json)
 
 import { type NextRequest, NextResponse } from "next/server";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
-import { searchForm4ForTicker } from "@/lib/api-clients/sec-form4";
+import { getEnrichedForm4Transactions } from "@/lib/api-clients/sec-form4";
+import type { Database } from "@/types/database.types";
+
+type Json = Database["public"]["Tables"]["institutional_activity"]["Insert"]["raw_payload"];
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -33,40 +36,45 @@ export async function GET(request: NextRequest) {
   }
 
   for (const { ticker } of watchlist) {
-    // Respect SEC rate limit: max 10 req/sec — conservative 300ms delay
-    await delay(300);
+    const result = await getEnrichedForm4Transactions(ticker, 21);
+    errors.push(...result.errors);
 
-    try {
-      const hits = await searchForm4ForTicker(ticker);
+    if (!result.transactions.length) continue;
 
-      if (!hits.length) continue;
+    totalFetched += result.transactions.length;
 
-      totalFetched += hits.length;
+    const records = result.transactions.map((tx) => ({
+      ticker,
+      source: "sec_form4" as const,
+      activity_type: "buy" as const,
+      actor_name: tx.ownerName ?? null,
+      actor_type: "insider" as const,
+      trade_date: tx.transactionDate ?? null,
+      filed_date: tx.filingDate ?? null,
+      value_usd: tx.valueUsd ? Math.round(tx.valueUsd * 100) : null, // store in cents
+      raw_payload: {
+        owner_name: tx.ownerName,
+        owner_title: tx.ownerTitle,
+        owner_relation: tx.ownerRelation,
+        shares: tx.shares,
+        price_per_share: tx.pricePerShare,
+        value_usd_dollars: tx.valueUsd,
+        transaction_code: tx.transactionCode,
+        accession_number: tx.accessionNumber,
+        sec_filing_url: tx.secFilingUrl,
+      } as unknown as Json,
+    }));
 
-      const records = hits.map((hit) => ({
-        ticker,
-        source: "sec_form4" as const,
-        activity_type: "buy" as const,   // Form 4 acquisitions (A) — filtered by SEC search
-        actor_name: hit._source.entity_name ?? null,
-        actor_type: "insider" as const,
-        trade_date: hit._source.period_of_report ?? null,
-        filed_date: hit._source.file_date ?? null,
-        raw_payload: hit._source as unknown as import("@/types/database.types").Json,
-      }));
+    const { error, count } = await supabase
+      .from("institutional_activity")
+      .upsert(records, {
+        onConflict: "source,ticker,actor_name,trade_date,activity_type",
+        ignoreDuplicates: true,
+        count: "exact",
+      });
 
-      const { error, count } = await supabase
-        .from("institutional_activity")
-        .upsert(records, {
-          onConflict: "source,ticker,actor_name,trade_date,activity_type",
-          ignoreDuplicates: true,
-          count: "exact",
-        });
-
-      if (error) errors.push(`DB ${ticker}: ${error.message}`);
-      else totalNew += count ?? 0;
-    } catch (err) {
-      errors.push(`Form4 ${ticker}: ${String(err)}`);
-    }
+    if (error) errors.push(`DB ${ticker}: ${error.message}`);
+    else totalNew += count ?? 0;
   }
 
   await supabase.from("fetch_log").insert({
@@ -79,9 +87,10 @@ export async function GET(request: NextRequest) {
     completed_at: new Date().toISOString(),
   });
 
-  return NextResponse.json({ success: true, fetched: totalFetched, new: totalNew });
-}
-
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return NextResponse.json({
+    success: true,
+    fetched: totalFetched,
+    new: totalNew,
+    errors: errors.length > 0 ? errors.slice(0, 3) : undefined,
+  });
 }
