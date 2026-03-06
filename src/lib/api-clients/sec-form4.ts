@@ -76,16 +76,30 @@ async function getRecentForm4Filings(ticker: string, daysBack = 21): Promise<Rec
   return hits
     .map((hit) => {
       const src = hit._source;
-      const accNo = (src.accession_no as string | undefined) ?? "";
+      // EFTS Form 4 fields (different from 13F):
+      //   adsh          = accession number with dashes (e.g. "0001283854-26-000002")
+      //   ciks[0]       = reporting owner CIK (e.g. "0001283854")
+      //   display_names = ["Owner Name  (CIK 0001283854)", "ISSUER CORP  (CIK 0001045810)"]
+      //   period_ending = transaction/report date
+      const accNo = (src.adsh as string | undefined) ?? "";
       if (!accNo) return null;
-      // First 10 digits of accession number (before first dash) = filer CIK
-      const filerCik = accNo.split("-")[0].replace(/^0+/, "");
+
+      // Filer CIK from ciks array (first entry is the reporting owner)
+      const ciks = src.ciks as string[] | undefined;
+      const filerCikRaw = ciks?.[0] ?? accNo.split("-")[0];
+      const filerCik = filerCikRaw.replace(/^0+/, "");
+
+      // Insider name from display_names[0]: "Shoquist Debora  (CIK 0001283854)"
+      const displayNames = src.display_names as string[] | undefined;
+      const rawName = displayNames?.[0] ?? "";
+      const entityName = rawName.split(/\s*\(CIK/)[0].trim() || null;
+
       return {
         accessionNumber: accNo,
         filerCik,
         filingDate: (src.file_date as string | undefined) ?? "",
-        reportDate: (src.period_of_report as string | undefined) ?? "",
-        entityName: (src.entity_name as string | undefined) ?? null,
+        reportDate: (src.period_ending as string | undefined) ?? "",
+        entityName,
       };
     })
     .filter((f): f is RecentFiling => f !== null && !!f.filerCik);
