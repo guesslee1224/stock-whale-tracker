@@ -21,6 +21,7 @@ export default function LoginPage() {
     setLoading(true);
 
     const supabase = getSupabaseBrowserClient();
+    if (!supabase) { setError("Unable to connect to auth service"); setLoading(false); return; }
     const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
