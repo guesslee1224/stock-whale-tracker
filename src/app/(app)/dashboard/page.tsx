@@ -7,9 +7,8 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const supabase = await getSupabaseServerClient();
 
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .split("T")[0];
+  // Use fetched_at so 13F filings (which report Q4 dates) still appear in the dashboard
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
@@ -24,9 +23,9 @@ export default async function DashboardPage() {
     supabase
       .from("institutional_activity")
       .select("*")
-      .gte("trade_date", thirtyDaysAgo)
-      .order("trade_date", { ascending: false })
-      .limit(100),
+      .gte("fetched_at", thirtyDaysAgo)
+      .order("fetched_at", { ascending: false })
+      .limit(200),
 
     supabase
       .from("alert_history")
