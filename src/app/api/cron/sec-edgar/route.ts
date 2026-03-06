@@ -51,16 +51,30 @@ export async function GET(request: NextRequest) {
 
       totalFetched += filings.length;
 
-      const records = filings.map((hit) => ({
-        ticker,
-        source: "sec_13f" as const,
-        activity_type: "increase" as const, // 13F indicates a holding was reported
-        actor_name: hit._source.entity_name ?? null,
-        actor_type: "institution" as const,
-        filed_date: hit._source.file_date ?? null,
-        trade_date: hit._source.period_of_report ?? null,
-        raw_payload: hit._source as import("@/types/database.types").Json,
-      }));
+      const records = filings.map((hit) => {
+        // EFTS may return entity_name in display_names array or entity_name field
+        const entityName =
+          hit._source.entity_name ??
+          (Array.isArray(hit._source.display_names)
+            ? (hit._source.display_names as string[])[0]
+            : null) ??
+          null;
+
+        return {
+          ticker,
+          source: "sec_13f" as const,
+          activity_type: "increase" as const, // 13F indicates a holding was reported
+          actor_name: entityName,
+          actor_type: "institution" as const,
+          // filed_date from file_date; trade_date from period_of_report (quarter end)
+          filed_date: hit._source.file_date ?? null,
+          trade_date: hit._source.period_of_report ?? null,
+          raw_payload: {
+            ...(hit._source as Record<string, unknown>),
+            entity_name: entityName,
+          } as import("@/types/database.types").Json,
+        };
+      });
 
       if (records.length > 0) {
         const { error, count } = await supabase

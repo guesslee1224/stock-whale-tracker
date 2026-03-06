@@ -118,12 +118,13 @@ function extractAllXmlBlocks(xml: string, tag: string): string[] {
 }
 
 // ─── Form 4 XML parser ────────────────────────────────────────────────────────
+// Returns ALL non-derivative transactions (acquisitions + disposals) in the filing
 function parseForm4Xml(
   xml: string,
   accessionNumber: string,
   cikStr: string,
   filingDate: string
-): Form4Transaction | null {
+): Form4Transaction[] {
   const cikNum = parseInt(cikStr, 10);
   const accNoDashes = accessionNumber.replace(/-/g, "");
   const secFilingUrl = `https://www.sec.gov/Archives/edgar/data/${cikNum}/${accNoDashes}/`;
@@ -143,13 +144,16 @@ function parseForm4Xml(
     ? "10% Owner"
     : "Insider";
 
-  // Extract all nonDerivativeTransaction blocks, look for acquisitions
+  // Extract all nonDerivativeTransaction blocks (buys AND sells)
   const nonDerivBlock = extractXmlBlock(xml, "nonDerivativeTable") ?? "";
   const txBlocks = extractAllXmlBlocks(nonDerivBlock, "nonDerivativeTransaction");
 
+  const results: Form4Transaction[] = [];
+
   for (const tx of txBlocks) {
     const adCode = extractXmlValue(tx, "transactionAcquiredDisposedCode");
-    if (adCode !== "A") continue;
+    // Only process clear acquisitions (A) or disposals (D)
+    if (adCode !== "A" && adCode !== "D") continue;
 
     const code = extractXmlValue(tx, "transactionCode");
     const sharesStr = extractXmlValue(tx, "transactionShares");
@@ -163,7 +167,7 @@ function parseForm4Xml(
     const valueUsd =
       pricePerShare && !isNaN(pricePerShare) ? shares * pricePerShare : null;
 
-    return {
+    results.push({
       ownerName,
       ownerTitle: officerTitle,
       ownerRelation,
@@ -172,14 +176,14 @@ function parseForm4Xml(
       shares,
       pricePerShare: pricePerShare && !isNaN(pricePerShare) ? pricePerShare : null,
       valueUsd,
-      acquiredDisposed: "A",
+      acquiredDisposed: adCode as "A" | "D",
       transactionCode: code,
       accessionNumber,
       secFilingUrl,
-    };
+    });
   }
 
-  return null; // no acquisitions found
+  return results;
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -226,10 +230,11 @@ export async function getEnrichedForm4Transactions(
       }
       const xml = await xmlRes.text();
       const parsed = parseForm4Xml(xml, filing.accessionNumber, cik, filing.filingDate);
-      if (parsed) {
-        if (!parsed.transactionDate && filing.reportDate)
-          parsed.transactionDate = filing.reportDate;
-        transactions.push(parsed);
+      // parsed is now an array — may contain multiple transactions per filing
+      for (const tx of parsed) {
+        if (!tx.transactionDate && filing.reportDate)
+          tx.transactionDate = filing.reportDate;
+        transactions.push(tx);
       }
     } catch (err) {
       errors.push(`Parse ${filing.accessionNumber}: ${String(err)}`);

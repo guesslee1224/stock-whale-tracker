@@ -46,7 +46,8 @@ export async function GET(request: NextRequest) {
     const records = result.transactions.map((tx) => ({
       ticker,
       source: "sec_form4" as const,
-      activity_type: "buy" as const,
+      // Map acquiredDisposed correctly: A = buy, D = sell
+      activity_type: (tx.acquiredDisposed === "A" ? "buy" : "sell") as "buy" | "sell",
       actor_name: tx.ownerName ?? null,
       actor_type: "insider" as const,
       trade_date: tx.transactionDate ?? null,
@@ -60,6 +61,7 @@ export async function GET(request: NextRequest) {
         price_per_share: tx.pricePerShare,
         value_usd_dollars: tx.valueUsd,
         transaction_code: tx.transactionCode,
+        acquired_disposed: tx.acquiredDisposed,
         accession_number: tx.accessionNumber,
         sec_filing_url: tx.secFilingUrl,
       } as unknown as Json,
