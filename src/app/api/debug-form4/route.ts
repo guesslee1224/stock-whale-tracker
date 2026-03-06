@@ -34,12 +34,17 @@ export async function GET(request: NextRequest) {
   const eftsData = eftsRes.ok ? await eftsRes.json() : null;
 
   const hits = eftsData?.hits?.hits ?? [];
+  // Dump ALL keys from first hit's _source so we know the real field names
+  const firstSourceAllKeys = hits[0] ? Object.keys(hits[0]._source) : [];
+  const firstSourceFull = hits[0]?._source ?? null;
+
   const sampleHits = hits.slice(0, 3).map((h: { _source: Record<string, unknown> }) => ({
-    accession_no: h._source.accession_no,
-    file_date: h._source.file_date,
-    entity_name: h._source.entity_name,
-    period_of_report: h._source.period_of_report,
-    form_type: h._source.form_type,
+    // Try common field name variants
+    accession_no: h._source.accession_no ?? h._source["accession-no"] ?? h._source.accessionNo,
+    file_date: h._source.file_date ?? h._source.fileDate,
+    entity_name: h._source.entity_name ?? h._source.entityName,
+    period_of_report: h._source.period_of_report ?? h._source.periodOfReport,
+    form_type: h._source.form_type ?? h._source.formType,
   }));
 
   // Step 2: For first hit, try to fetch filing index
@@ -93,6 +98,8 @@ export async function GET(request: NextRequest) {
     today,
     eftsStatus,
     totalHits: hits.length,
+    firstSourceAllKeys,
+    firstSourceFull,
     sampleHits,
     indexResult,
     xmlSample,
