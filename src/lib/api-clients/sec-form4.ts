@@ -228,40 +228,24 @@ export async function getEnrichedForm4Transactions(
     await delay(250); // stay under SEC 10 req/sec limit
     try {
       const accNoDashes = filing.accessionNumber.replace(/-/g, "");
-      // Try to fetch the filing index to find the primary XML document
-      const indexUrl = `https://www.sec.gov/Archives/edgar/data/${filing.filerCik}/${accNoDashes}/${filing.accessionNumber}-index.json`;
-      let primaryDoc: string | null = null;
-      try {
-        const indexRes = await fetch(indexUrl, { headers: SEC_HEADERS, next: { revalidate: 0 } });
-        if (indexRes.ok) {
-          const idx = await indexRes.json();
-          const items: Array<{ name: string; type: string }> = idx?.directory?.item ?? [];
-          // Find the Form 4 XML (usually named wf-form4.xml or *.xml with type "4")
-          const xmlItem = items.find(
-            (it) =>
-              (it.type === "4" || it.name.endsWith(".xml")) &&
-              !it.name.includes("R1") &&
-              !it.name.includes("R2")
-          );
-          primaryDoc = xmlItem?.name ?? null;
-        }
-      } catch {
-        // index fetch failed — try common fallback names below
-      }
 
-      // Fallback: common Form 4 XML filename patterns
-      if (!primaryDoc) primaryDoc = "wf-form4.xml";
-
-      const xmlUrl = `https://www.sec.gov/Archives/edgar/data/${filing.filerCik}/${accNoDashes}/${primaryDoc}`;
-      const xmlRes = await fetch(xmlUrl, {
+      // Fetch the complete EDGAR submission text file — this ALWAYS exists for any
+      // filing and contains all documents (including the Form 4 XML) embedded within it.
+      // Avoids needing to guess the primary document filename.
+      const submissionUrl = `https://www.sec.gov/Archives/edgar/data/${filing.filerCik}/${accNoDashes}/${filing.accessionNumber}.txt`;
+      const txtRes = await fetch(submissionUrl, {
         headers: XML_HEADERS,
         next: { revalidate: 0 },
       });
-      if (!xmlRes.ok) {
-        errors.push(`XML ${filing.accessionNumber}: HTTP ${xmlRes.status}`);
+      if (!txtRes.ok) {
+        errors.push(`Submission ${filing.accessionNumber}: HTTP ${txtRes.status}`);
         continue;
       }
-      const xml = await xmlRes.text();
+      const txt = await txtRes.text();
+
+      // Extract the <ownershipDocument> XML block from within the submission file
+      const ownershipMatch = txt.match(/<ownershipDocument[\s\S]*?<\/ownershipDocument>/i);
+      const xml = ownershipMatch ? ownershipMatch[0] : txt;
       const parsed = parseForm4Xml(xml, filing.accessionNumber, filing.filerCik, filing.filingDate);
       // parsed is now an array — may contain multiple transactions per filing
       for (const tx of parsed) {

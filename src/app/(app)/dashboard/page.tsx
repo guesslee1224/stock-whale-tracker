@@ -1,6 +1,7 @@
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { SummaryCards } from "@/components/dashboard/SummaryCards";
 import { TopMoversTable } from "@/components/dashboard/TopMoversTable";
+import { SyncButton } from "@/components/dashboard/SyncButton";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +71,7 @@ export default async function DashboardPage() {
             {lastSync ? ` · Last sync ${lastSync}` : " · Not yet synced"}
           </p>
         </div>
+        <SyncButton />
       </div>
 
       {/* Summary metrics */}
