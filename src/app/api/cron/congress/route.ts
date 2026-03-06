@@ -39,17 +39,25 @@ export async function GET(request: NextRequest) {
 
   const watchedTickers = new Set(watchlist.map((w) => w.ticker.toUpperCase()));
 
-  // Fetch all recent trades from both chambers in parallel
+  // Fetch each chamber independently — one failure should not block the other
   let houseTrades: Awaited<ReturnType<typeof fetchHouseTrades>> = [];
   let senateTrades: Awaited<ReturnType<typeof fetchSenateTrades>> = [];
 
-  try {
-    [houseTrades, senateTrades] = await Promise.all([
-      fetchHouseTrades(),
-      fetchSenateTrades(),
-    ]);
-  } catch (err) {
-    errors.push(`Fetch error: ${String(err)}`);
+  const [houseResult, senateResult] = await Promise.allSettled([
+    fetchHouseTrades(),
+    fetchSenateTrades(),
+  ]);
+
+  if (houseResult.status === "fulfilled") {
+    houseTrades = houseResult.value;
+  } else {
+    errors.push(`House fetch: ${String(houseResult.reason)}`);
+  }
+
+  if (senateResult.status === "fulfilled") {
+    senateTrades = senateResult.value;
+  } else {
+    errors.push(`Senate fetch: ${String(senateResult.reason)}`);
   }
 
   const totalFetched = houseTrades.length + senateTrades.length;

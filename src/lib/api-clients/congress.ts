@@ -40,24 +40,38 @@ export interface SenateTrade {
 }
 
 export async function fetchHouseTrades(): Promise<HouseTrade[]> {
-  const res = await fetch(HOUSE_API, {
-    headers: HEADERS,
-    next: { revalidate: 0 },
-  });
-  if (!res.ok) throw new Error(`House Stock Watcher error: ${res.status}`);
-  const raw = await res.json();
-  // API returns array directly or wrapped in { data: [] }
-  return Array.isArray(raw) ? raw : (raw.data ?? []);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20_000);
+  try {
+    const res = await fetch(HOUSE_API, {
+      headers: HEADERS,
+      signal: controller.signal,
+      next: { revalidate: 0 },
+    });
+    if (!res.ok) throw new Error(`House Stock Watcher error: ${res.status}`);
+    const raw = await res.json();
+    // API returns array directly or wrapped in { data: [] }
+    return Array.isArray(raw) ? raw : (raw.data ?? []);
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export async function fetchSenateTrades(): Promise<SenateTrade[]> {
-  const res = await fetch(SENATE_API, {
-    headers: HEADERS,
-    next: { revalidate: 0 },
-  });
-  if (!res.ok) throw new Error(`Senate Stock Watcher error: ${res.status}`);
-  const raw = await res.json();
-  return Array.isArray(raw) ? raw : (raw.data ?? []);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20_000);
+  try {
+    const res = await fetch(SENATE_API, {
+      headers: HEADERS,
+      signal: controller.signal,
+      next: { revalidate: 0 },
+    });
+    if (!res.ok) throw new Error(`Senate Stock Watcher error: ${res.status}`);
+    const raw = await res.json();
+    return Array.isArray(raw) ? raw : (raw.data ?? []);
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 // Parse "$1,001 - $15,000" style range strings → midpoint in cents
