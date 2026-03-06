@@ -24,25 +24,6 @@ const XML_HEADERS = {
   Accept: "text/xml, application/xml, */*",
 };
 
-// ─── CIK lookup (cached) ──────────────────────────────────────────────────────
-let tickerToCikCache: Record<string, string> | null = null;
-
-async function getCIKForTicker(ticker: string): Promise<string | null> {
-  if (!tickerToCikCache) {
-    const res = await fetch("https://www.sec.gov/files/company_tickers.json", {
-      headers: SEC_HEADERS,
-      next: { revalidate: 86400 },
-    });
-    if (!res.ok) return null;
-    const raw = (await res.json()) as Record<string, { cik_str: number; ticker: string }>;
-    tickerToCikCache = {};
-    for (const entry of Object.values(raw)) {
-      tickerToCikCache[entry.ticker.toUpperCase()] = String(entry.cik_str).padStart(10, "0");
-    }
-  }
-  return tickerToCikCache[ticker.toUpperCase()] ?? null;
-}
-
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface Form4Transaction {
   ownerName: string | null;
@@ -59,41 +40,55 @@ export interface Form4Transaction {
   secFilingUrl: string;
 }
 
-// ─── EDGAR submissions API ────────────────────────────────────────────────────
+// ─── EDGAR EFTS search for Form 4 by issuer ticker ───────────────────────────
+// Form 4 filings are filed by the REPORTING OWNER (insider), not the company.
+// They are indexed in EDGAR under the owner's CIK, not the issuer's CIK.
+// The correct way to find Form 4s for a company is via full-text search
+// (EFTS), which searches the filing content including the issuer's ticker.
+//
+// The accession number encodes the filer/owner CIK in its first 10 digits:
+//   "0000950170-25-007241" → filer CIK = "950170"
 interface RecentFiling {
   accessionNumber: string;
+  filerCik: string;    // reporting owner CIK (from accession number)
   filingDate: string;
   reportDate: string;
-  primaryDocument: string;
+  entityName: string | null; // reporting owner name (from EFTS)
 }
 
-async function getRecentForm4Filings(cik: string, daysBack = 21): Promise<RecentFiling[]> {
-  const res = await fetch(`https://data.sec.gov/submissions/CIK${cik}.json`, {
-    headers: SEC_HEADERS,
-    next: { revalidate: 0 },
-  });
-  if (!res.ok) return [];
-
-  const data = await res.json();
-  const recent = data?.filings?.recent;
-  if (!recent?.form) return [];
-
+async function getRecentForm4Filings(ticker: string, daysBack = 21): Promise<RecentFiling[]> {
   const cutoff = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000)
     .toISOString()
     .split("T")[0];
+  const today = new Date().toISOString().split("T")[0];
 
-  const results: RecentFiling[] = [];
-  for (let i = 0; i < recent.form.length; i++) {
-    if (recent.form[i] === "4" && recent.filingDate[i] >= cutoff) {
-      results.push({
-        accessionNumber: recent.accessionNumber[i],
-        filingDate: recent.filingDate[i],
-        reportDate: recent.reportDate[i] ?? "",
-        primaryDocument: recent.primaryDocument[i] ?? "",
-      });
-    }
-  }
-  return results;
+  // EFTS full-text search: finds Form 4 filings that mention the ticker as issuer
+  const url =
+    `https://efts.sec.gov/LATEST/search-index?q=%22${encodeURIComponent(ticker)}%22` +
+    `&forms=4&dateRange=custom&startdt=${cutoff}&enddt=${today}`;
+
+  const res = await fetch(url, { headers: SEC_HEADERS, next: { revalidate: 0 } });
+  if (!res.ok) return [];
+
+  const data = await res.json();
+  const hits: Array<{ _source: Record<string, unknown> }> = data?.hits?.hits ?? [];
+
+  return hits
+    .map((hit) => {
+      const src = hit._source;
+      const accNo = (src.accession_no as string | undefined) ?? "";
+      if (!accNo) return null;
+      // First 10 digits of accession number (before first dash) = filer CIK
+      const filerCik = accNo.split("-")[0].replace(/^0+/, "");
+      return {
+        accessionNumber: accNo,
+        filerCik,
+        filingDate: (src.file_date as string | undefined) ?? "",
+        reportDate: (src.period_of_report as string | undefined) ?? "",
+        entityName: (src.entity_name as string | undefined) ?? null,
+      };
+    })
+    .filter((f): f is RecentFiling => f !== null && !!f.filerCik);
 }
 
 // ─── XML helpers ──────────────────────────────────────────────────────────────
@@ -198,18 +193,18 @@ export async function getEnrichedForm4Transactions(
 ): Promise<EnrichedForm4Result> {
   const errors: string[] = [];
 
-  const cik = await getCIKForTicker(ticker);
-  if (!cik) return { transactions: [], errors: [`No CIK for ${ticker}`] };
-
-  const cikNum = parseInt(cik, 10);
   let recentFilings: RecentFiling[] = [];
   try {
-    recentFilings = await getRecentForm4Filings(cik, daysBack);
+    recentFilings = await getRecentForm4Filings(ticker, daysBack);
   } catch (err) {
     return {
       transactions: [],
-      errors: [`Submissions fetch failed for ${ticker}: ${String(err)}`],
+      errors: [`EFTS search failed for ${ticker}: ${String(err)}`],
     };
+  }
+
+  if (!recentFilings.length) {
+    return { transactions: [], errors: [] };
   }
 
   const transactions: Form4Transaction[] = [];
@@ -219,7 +214,31 @@ export async function getEnrichedForm4Transactions(
     await delay(250); // stay under SEC 10 req/sec limit
     try {
       const accNoDashes = filing.accessionNumber.replace(/-/g, "");
-      const xmlUrl = `https://www.sec.gov/Archives/edgar/data/${cikNum}/${accNoDashes}/${filing.primaryDocument}`;
+      // Try to fetch the filing index to find the primary XML document
+      const indexUrl = `https://www.sec.gov/Archives/edgar/data/${filing.filerCik}/${accNoDashes}/${filing.accessionNumber}-index.json`;
+      let primaryDoc: string | null = null;
+      try {
+        const indexRes = await fetch(indexUrl, { headers: SEC_HEADERS, next: { revalidate: 0 } });
+        if (indexRes.ok) {
+          const idx = await indexRes.json();
+          const items: Array<{ name: string; type: string }> = idx?.directory?.item ?? [];
+          // Find the Form 4 XML (usually named wf-form4.xml or *.xml with type "4")
+          const xmlItem = items.find(
+            (it) =>
+              (it.type === "4" || it.name.endsWith(".xml")) &&
+              !it.name.includes("R1") &&
+              !it.name.includes("R2")
+          );
+          primaryDoc = xmlItem?.name ?? null;
+        }
+      } catch {
+        // index fetch failed — try common fallback names below
+      }
+
+      // Fallback: common Form 4 XML filename patterns
+      if (!primaryDoc) primaryDoc = "wf-form4.xml";
+
+      const xmlUrl = `https://www.sec.gov/Archives/edgar/data/${filing.filerCik}/${accNoDashes}/${primaryDoc}`;
       const xmlRes = await fetch(xmlUrl, {
         headers: XML_HEADERS,
         next: { revalidate: 0 },
@@ -229,11 +248,14 @@ export async function getEnrichedForm4Transactions(
         continue;
       }
       const xml = await xmlRes.text();
-      const parsed = parseForm4Xml(xml, filing.accessionNumber, cik, filing.filingDate);
+      const parsed = parseForm4Xml(xml, filing.accessionNumber, filing.filerCik, filing.filingDate);
       // parsed is now an array — may contain multiple transactions per filing
       for (const tx of parsed) {
         if (!tx.transactionDate && filing.reportDate)
           tx.transactionDate = filing.reportDate;
+        // Use entityName from EFTS as fallback for ownerName if XML parse missed it
+        if (!tx.ownerName && filing.entityName)
+          tx.ownerName = filing.entityName;
         transactions.push(tx);
       }
     } catch (err) {

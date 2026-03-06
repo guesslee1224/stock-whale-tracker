@@ -9,8 +9,8 @@ export default async function FeedPage() {
   const { data: activity } = await supabase
     .from("institutional_activity")
     .select("*")
-    .order("trade_date", { ascending: false })
-    .limit(100);
+    .order("fetched_at", { ascending: false })
+    .limit(500);
 
   return (
     <div className="p-4 md:p-8 space-y-6 max-w-3xl mx-auto">
