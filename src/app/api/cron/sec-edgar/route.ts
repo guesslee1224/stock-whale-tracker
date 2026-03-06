@@ -52,13 +52,16 @@ export async function GET(request: NextRequest) {
       totalFetched += filings.length;
 
       const records = filings.map((hit) => {
-        // EFTS may return entity_name in display_names array or entity_name field
-        const entityName =
+        // EFTS may return entity_name directly or in display_names array.
+        // display_names entries look like "Skaana Management L.P. (CIK 0001874...)"
+        // Strip the " (CIK ...)" suffix to get a clean institution name.
+        const rawName =
           hit._source.entity_name ??
           (Array.isArray(hit._source.display_names)
             ? (hit._source.display_names as string[])[0]
             : null) ??
           null;
+        const entityName = rawName ? rawName.split(/\s*\(CIK/)[0].trim() || null : null;
 
         return {
           ticker,
