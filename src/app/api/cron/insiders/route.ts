@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
         actor_type: "insider" as const,
         trade_date: hit._source.period_of_report ?? null,
         filed_date: hit._source.file_date ?? null,
-        raw_payload: hit._source as Record<string, unknown>,
+        raw_payload: hit._source as unknown as import("@/types/database.types").Json,
       }));
 
       const { error, count } = await supabase

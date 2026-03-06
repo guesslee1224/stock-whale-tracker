@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
       trade_date: t.transaction_date ?? null,
       filed_date: t.disclosure_date ?? null,
       value_usd: parseAmountRange(t.amount),
-      raw_payload: t as unknown as Record<string, unknown>,
+      raw_payload: t as unknown as import("@/types/database.types").Json,
     }));
 
   // ── Senate member trades ──────────────────────────────────────────────────
@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
       trade_date: t.transaction_date ?? null,
       filed_date: t.disclosure_date ?? null,
       value_usd: parseAmountRange(t.amount),
-      raw_payload: t as unknown as Record<string, unknown>,
+      raw_payload: t as unknown as import("@/types/database.types").Json,
     }));
 
   const allRecords = [...houseRecords, ...senateRecords];
