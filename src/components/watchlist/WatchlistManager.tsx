@@ -1,8 +1,11 @@
 "use client";
 
-import { useState, useTransition, useMemo } from "react";
+import { useState, useTransition, useMemo, useRef, useEffect, useCallback } from "react";
 import { addToWatchlist, removeFromWatchlist } from "@/actions/watchlist";
-import { XIcon, PlusIcon, Loader2Icon, TrendingUpIcon, TrendingDownIcon, RefreshCwIcon, ChevronUpIcon, ChevronDownIcon } from "lucide-react";
+import {
+  XIcon, PlusIcon, Loader2Icon, TrendingUpIcon, TrendingDownIcon,
+  RefreshCwIcon, ChevronUpIcon, ChevronDownIcon, SearchIcon,
+} from "lucide-react";
 import type { WatchlistRow } from "@/types/database.types";
 
 type SortKey = "ticker" | "company" | "signals" | "last_trade";
@@ -13,6 +16,11 @@ interface ActivityStat {
   buys: number;
   sells: number;
   last_trade: string | null;
+}
+
+interface SearchResult {
+  ticker: string;
+  company: string;
 }
 
 interface Props {
@@ -26,7 +34,6 @@ function formatDate(dateStr: string | null): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-
 export function WatchlistManager({ initialTickers, activityStats = {} }: Props) {
   const [tickers, setTickers] = useState(initialTickers);
   const [inputValue, setInputValue] = useState("");
@@ -37,12 +44,35 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
   const [sortKey, setSortKey] = useState<SortKey>("ticker");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
+  // Combobox search state
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [focusedIdx, setFocusedIdx] = useState(-1);
+  // Track selected company for the temp row
+  const [pendingCompany, setPendingCompany] = useState<string | null>(null);
+
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function onMouseDown(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+        setFocusedIdx(-1);
+      }
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, []);
+
   function handleSort(key: SortKey) {
     if (key === sortKey) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortKey(key);
-      // Default direction: desc for signals + last_trade (higher/newer first), asc for text
       setSortDir(key === "signals" || key === "last_trade" ? "desc" : "asc");
     }
   }
@@ -65,21 +95,86 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
     });
   }, [tickers, sortKey, sortDir, activityStats]);
 
+  // Debounced search as user types
+  const triggerSearch = useCallback((val: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!val.trim()) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      setSearchLoading(false);
+      return;
+    }
+    setSearchLoading(true);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/search/ticker?q=${encodeURIComponent(val)}`);
+        if (res.ok) {
+          const { results } = await res.json() as { results: SearchResult[] };
+          setSearchResults(results);
+          setShowDropdown(results.length > 0);
+          setFocusedIdx(-1);
+        }
+      } catch {
+        // silently ignore search errors
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 180);
+  }, []);
+
+  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const val = e.target.value;
+    setInputValue(val);
+    setError(null);
+    setPendingCompany(null);
+    triggerSearch(val);
+  }
+
+  function selectResult(result: SearchResult) {
+    setInputValue(result.ticker);
+    setPendingCompany(result.company);
+    setShowDropdown(false);
+    setSearchResults([]);
+    setFocusedIdx(-1);
+    inputRef.current?.focus();
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!showDropdown) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setFocusedIdx((i) => Math.min(i + 1, searchResults.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setFocusedIdx((i) => Math.max(i - 1, -1));
+    } else if (e.key === "Enter" && focusedIdx >= 0) {
+      e.preventDefault();
+      selectResult(searchResults[focusedIdx]);
+    } else if (e.key === "Escape") {
+      setShowDropdown(false);
+      setFocusedIdx(-1);
+    }
+  }
+
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     const ticker = inputValue.trim().toUpperCase();
     if (!ticker) return;
 
+    setShowDropdown(false);
+    setSearchResults([]);
+
     const tempRow: WatchlistRow = {
       id: `temp-${ticker}`,
       ticker,
-      company_name: null,
+      company_name: pendingCompany ?? null,
       added_at: new Date().toISOString(),
       is_active: true,
     };
     setTickers((prev) => [...prev, tempRow]);
     setInputValue("");
+    setPendingCompany(null);
 
     startTransition(async () => {
       const result = await addToWatchlist(ticker);
@@ -87,7 +182,6 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
         setTickers((prev) => prev.filter((t) => t.id !== tempRow.id));
         setError(result.error);
       } else {
-        // Auto-sync the new ticker in the background — no need to wait
         setSyncingTicker(ticker);
         fetch("/api/sync/ticker", {
           method: "POST",
@@ -101,7 +195,6 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
   async function handleRemove(ticker: string, id: string) {
     setRemovingId(id);
     setTickers((prev) => prev.filter((t) => t.id !== id));
-
     startTransition(async () => {
       const result = await removeFromWatchlist(ticker);
       if (result.error) setError(result.error);
@@ -111,21 +204,75 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
 
   return (
     <div className="space-y-5">
-      {/* ── Add ticker bar ── */}
+      {/* ── Add ticker combobox ── */}
       <form onSubmit={handleAdd} className="flex gap-2 max-w-sm">
-        <div className="relative flex-1">
+        <div className="relative flex-1" ref={containerRef}>
+          {/* Search icon */}
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+            {searchLoading
+              ? <Loader2Icon className="h-3.5 w-3.5 animate-spin" style={{ color: "#3A5070" }} />
+              : <SearchIcon className="h-3.5 w-3.5" style={{ color: "#3A5070" }} />
+            }
+          </div>
+
           <input
+            ref={inputRef}
             value={inputValue}
-            onChange={(e) => {
-              setInputValue(e.target.value.toUpperCase());
-              setError(null);
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            onFocus={() => {
+              if (searchResults.length > 0) setShowDropdown(true);
             }}
-            placeholder="Add symbol…"
-            maxLength={5}
-            className="w-full rounded border border-border bg-muted/30 text-foreground text-sm px-3 py-2.5 font-mono font-bold tracking-widest focus:outline-none focus:ring-1 focus:ring-primary transition-colors duration-150"
+            placeholder="Ticker or company name…"
+            autoComplete="off"
+            spellCheck={false}
+            className="w-full rounded border border-border bg-muted/30 text-foreground text-sm pl-8 pr-3 py-2.5 font-mono tracking-wide focus:outline-none focus:ring-1 focus:ring-primary transition-colors duration-150"
             style={{ caretColor: "#00E87A" }}
           />
+
+          {/* Dropdown */}
+          {showDropdown && searchResults.length > 0 && (
+            <div
+              className="absolute z-50 left-0 right-0 top-full mt-1 rounded-lg overflow-hidden"
+              style={{
+                background: "#0d1424",
+                border: "1px solid #1A2D4A",
+                boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+              }}
+            >
+              {searchResults.map((result, i) => (
+                <button
+                  key={result.ticker}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault(); // prevents input blur before click
+                    selectResult(result);
+                  }}
+                  onMouseEnter={() => setFocusedIdx(i)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors duration-75"
+                  style={{
+                    background: i === focusedIdx ? "rgba(0, 232, 122, 0.07)" : "transparent",
+                    borderBottom: i < searchResults.length - 1 ? "1px solid rgba(26, 45, 74, 0.5)" : "none",
+                  }}
+                >
+                  <span
+                    className="font-mono font-bold text-xs tracking-wider shrink-0 w-12"
+                    style={{ color: "#00E87A" }}
+                  >
+                    {result.ticker}
+                  </span>
+                  <span
+                    className="text-xs truncate"
+                    style={{ color: i === focusedIdx ? "#C8D8EC" : "#64748b" }}
+                  >
+                    {result.company}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
+
         <button
           type="submit"
           disabled={isPending || !inputValue.trim()}
@@ -253,7 +400,6 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
                   >
                     {ticker}
                   </span>
-
                   {isTemp && (
                     <Loader2Icon className="h-3 w-3 animate-spin flex-shrink-0" style={{ color: "#8097B4" }} />
                   )}
@@ -342,7 +488,7 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
           style={{ background: "rgba(10, 22, 40, 0.5)" }}
         >
           <p className="text-sm text-muted-foreground">
-            No symbols tracked. Add a ticker above to start monitoring whale activity.
+            No symbols tracked. Add a ticker or company name above to start monitoring whale activity.
           </p>
         </div>
       )}

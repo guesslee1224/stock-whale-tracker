@@ -46,6 +46,37 @@ async function populateTickers() {
   }
 }
 
+// ── Fuzzy search: ticker symbol OR company name ────────────────────────────
+export async function searchTickersByQuery(
+  q: string,
+  limit = 8
+): Promise<Array<{ ticker: string; company: string }>> {
+  if (!q.trim()) return [];
+  await populateTickers();
+
+  const qUpper = q.toUpperCase().trim();
+  const qLower = q.toLowerCase().trim();
+
+  const scored: Array<{ ticker: string; company: string; score: number }> = [];
+
+  for (const [ticker, company] of Object.entries(tickerToTitleCache!)) {
+    let score = 0;
+    if (ticker === qUpper) score = 100;                                       // exact ticker
+    else if (ticker.startsWith(qUpper)) score = 80 - ticker.length;          // ticker prefix (prefer shorter)
+    else if (company.toUpperCase().startsWith(qUpper)) score = 60;           // company starts with
+    else if (company.toLowerCase().includes(qLower)) score = 40;             // company contains
+    else continue;
+
+    scored.push({ ticker, company, score });
+    if (scored.length >= 300) break; // cap scan to avoid long iteration for 1-char queries
+  }
+
+  return scored
+    .sort((a, b) => b.score - a.score || a.ticker.localeCompare(b.ticker))
+    .slice(0, limit)
+    .map(({ ticker, company }) => ({ ticker, company }));
+}
+
 export async function getCIKForTicker(ticker: string): Promise<string | null> {
   await populateTickers();
   return tickerToCikCache![ticker.toUpperCase()] ?? null;
