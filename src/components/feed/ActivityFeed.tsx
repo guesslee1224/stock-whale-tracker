@@ -8,19 +8,21 @@ import type { ActivityRow } from "@/types/database.types";
 type SortKey = "newest" | "oldest" | "ticker" | "value";
 type SourceFilter = "all" | "insider" | "institution" | "congress";
 
-function getUniqueTickers(items: ActivityRow[]): string[] {
-  return Array.from(new Set(items.map((i) => i.ticker).filter(Boolean))).sort();
+function getUniqueTickers(items: ActivityRow[], watchlistTickers: string[]): string[] {
+  const fromActivity = items.map((i) => i.ticker).filter(Boolean) as string[];
+  return Array.from(new Set([...watchlistTickers, ...fromActivity])).sort();
 }
 
 interface Props {
   initialItems: ActivityRow[];
+  watchlistTickers?: string[];
   filter?: {
     actorType?: string;
     ticker?: string;
   };
 }
 
-export function ActivityFeed({ initialItems, filter }: Props) {
+export function ActivityFeed({ initialItems, watchlistTickers = [], filter }: Props) {
   const [items, setItems] = useState<ActivityRow[]>(initialItems);
   const [newCount, setNewCount] = useState(0);
   const [sort, setSort] = useState<SortKey>("newest");
@@ -147,7 +149,7 @@ export function ActivityFeed({ initialItems, filter }: Props) {
             className="text-[11px] rounded border border-border bg-card text-foreground px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary font-mono"
           >
             <option value="all">All</option>
-            {getUniqueTickers(items).map((t) => (
+            {getUniqueTickers(items, watchlistTickers).map((t) => (
               <option key={t} value={t}>{t}</option>
             ))}
           </select>

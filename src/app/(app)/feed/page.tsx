@@ -38,6 +38,15 @@ export default async function FeedPage() {
     ...(congressResult.status === "fulfilled" ? (congressResult.value.data ?? []) : []),
   ];
 
+  // Watchlist tickers drive the dropdown — show all symbols even before they have activity
+  const { data: watchlistRows } = await supabase
+    .from("watchlist")
+    .select("ticker")
+    .eq("is_active", true)
+    .order("ticker", { ascending: true });
+
+  const watchlistTickers = (watchlistRows ?? []).map((r) => r.ticker);
+
   return (
     <div className="p-4 md:p-8 space-y-6 max-w-3xl mx-auto">
       <div className="flex items-center justify-between">
@@ -50,7 +59,7 @@ export default async function FeedPage() {
         <SyncButton />
       </div>
 
-      <ActivityFeed initialItems={activity} />
+      <ActivityFeed initialItems={activity} watchlistTickers={watchlistTickers} />
     </div>
   );
 }
