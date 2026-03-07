@@ -1,9 +1,12 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useMemo } from "react";
 import { addToWatchlist, removeFromWatchlist } from "@/actions/watchlist";
-import { XIcon, PlusIcon, Loader2Icon, TrendingUpIcon, TrendingDownIcon, RefreshCwIcon } from "lucide-react";
+import { XIcon, PlusIcon, Loader2Icon, TrendingUpIcon, TrendingDownIcon, RefreshCwIcon, ChevronUpIcon, ChevronDownIcon } from "lucide-react";
 import type { WatchlistRow } from "@/types/database.types";
+
+type SortKey = "ticker" | "company" | "signals" | "last_trade";
+type SortDir = "asc" | "desc";
 
 interface ActivityStat {
   total: number;
@@ -31,6 +34,36 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
   const [isPending, startTransition] = useTransition();
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [syncingTicker, setSyncingTicker] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>("ticker");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  function handleSort(key: SortKey) {
+    if (key === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      // Default direction: desc for signals + last_trade (higher/newer first), asc for text
+      setSortDir(key === "signals" || key === "last_trade" ? "desc" : "asc");
+    }
+  }
+
+  const sortedTickers = useMemo(() => {
+    return [...tickers].sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === "ticker") {
+        cmp = a.ticker.localeCompare(b.ticker);
+      } else if (sortKey === "company") {
+        cmp = (a.company_name ?? "").localeCompare(b.company_name ?? "");
+      } else if (sortKey === "signals") {
+        cmp = (activityStats[a.ticker]?.total ?? 0) - (activityStats[b.ticker]?.total ?? 0);
+      } else if (sortKey === "last_trade") {
+        const da = activityStats[a.ticker]?.last_trade ?? "";
+        const db = activityStats[b.ticker]?.last_trade ?? "";
+        cmp = da.localeCompare(db);
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [tickers, sortKey, sortDir, activityStats]);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -146,25 +179,49 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
               borderBottom: "1px solid #1A2D4A",
             }}
           >
-            {(["Symbol", "Company", "Signals", "Last Trade", ""] as const).map((h, i) => (
-              <span
-                key={h || i}
-                className="text-[10px] font-semibold tracking-widest uppercase"
-                style={{
-                  color: "#3A5070",
-                  display: "flex",
-                  // Signals (i=2) aligns left so header sits above the first badge;
-                  // Last Trade (i=3) and the empty remove column (i=4) stay right.
-                  justifyContent: i === 2 ? "flex-start" : i >= 3 ? "flex-end" : "flex-start",
-                }}
-              >
-                {h}
-              </span>
-            ))}
+            {(
+              [
+                { label: "Symbol",     key: "ticker"     as SortKey, align: "flex-start" },
+                { label: "Company",    key: "company"    as SortKey, align: "flex-start" },
+                { label: "Signals",    key: "signals"    as SortKey, align: "flex-start" },
+                { label: "Last Trade", key: "last_trade" as SortKey, align: "flex-end"   },
+                { label: "",           key: null,                    align: "flex-end"   },
+              ] as const
+            ).map(({ label, key, align }) => {
+              const active = key === sortKey;
+              const Chevron = sortDir === "asc" ? ChevronUpIcon : ChevronDownIcon;
+              return (
+                <button
+                  key={label || "remove"}
+                  onClick={() => key && handleSort(key)}
+                  disabled={!key}
+                  className="text-[10px] font-semibold tracking-widest uppercase transition-colors duration-100 disabled:cursor-default"
+                  style={{
+                    color: active ? "#C8D8EC" : "#3A5070",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "3px",
+                    justifyContent: align,
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    cursor: key ? "pointer" : "default",
+                  }}
+                >
+                  {label}
+                  {key && (
+                    <Chevron
+                      className="h-2.5 w-2.5 flex-shrink-0"
+                      style={{ opacity: active ? 1 : 0.25 }}
+                    />
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           {/* Rows */}
-          {tickers.map(({ id, ticker, company_name }, i) => {
+          {sortedTickers.map(({ id, ticker, company_name }, i) => {
             const stats = activityStats[ticker];
             const isTemp = id.startsWith("temp-");
             const isRemoving = removingId === id;
@@ -176,7 +233,7 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
                 style={{
                   gridTemplateColumns: "minmax(120px,1.8fr) minmax(140px,3fr) 160px 130px 28px",
                   background: i % 2 === 0 ? "rgba(10, 22, 40, 0.65)" : "rgba(6, 13, 26, 0.55)",
-                  borderBottom: i < tickers.length - 1 ? "1px solid rgba(26, 45, 74, 0.4)" : "none",
+                  borderBottom: i < sortedTickers.length - 1 ? "1px solid rgba(26, 45, 74, 0.4)" : "none",
                   opacity: isRemoving ? 0.35 : 1,
                   cursor: "default",
                 }}
