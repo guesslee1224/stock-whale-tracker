@@ -96,7 +96,7 @@ export function ActivityFeed({ initialItems, filter }: Props) {
       const dateB = b.trade_date ?? b.filed_date ?? b.fetched_at ?? "";
       return sort === "oldest" ? dateA.localeCompare(dateB) : dateB.localeCompare(dateA);
     });
-  }, [items, sort, sourceFilter]);
+  }, [items, sort, sourceFilter, tickerFilter]);
 
   const filterLabels: Record<SourceFilter, string> = {
     all: "All",
