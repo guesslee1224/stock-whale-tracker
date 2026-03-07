@@ -105,7 +105,8 @@ export async function GET(request: NextRequest) {
     const { error, count } = await supabase
       .from("institutional_activity")
       .upsert(allRecords, {
-        onConflict: "source,ticker,actor_name,trade_date,activity_type",
+        // Matches the constraint from migration 0004 (activity_type removed)
+        onConflict: "source,ticker,actor_name,trade_date",
         ignoreDuplicates: true,
         count: "exact",
       });

@@ -1,13 +1,23 @@
-// Congressional trading data — free public APIs, no key required
+// Congressional trading data — free public data, no API key required
 //
-// House trades: housestockwatcher.com (aggregates House Clerk PTR filings)
-// Senate trades: senatestockwatcher.com (aggregates Senate disclosure PTR filings)
+// House trades: AWS S3 bucket (housestockwatcher project)
+//   https://house-stock-watcher-data.s3-us-west-2.amazonaws.com/data/all_transactions.json
+//   This S3 bucket is not IP-blocked like the housestockwatcher.com API endpoint.
 //
-// Both pull from official government disclosure portals (STOCK Act filings).
+// Senate trades: GitHub raw CDN (timothycarambat/senate-stock-watcher-data)
+//   https://raw.githubusercontent.com/timothycarambat/senate-stock-watcher-data/master/all_ticker_transactions.json
+//   Indexed by ticker, served via GitHub's CDN — not IP-blocked from Vercel.
+//
+// Both sources pull from official STOCK Act PTR government disclosure filings.
 // Politicians have 45 days to report after a transaction.
 
-const HOUSE_API = "https://housestockwatcher.com/api";
-const SENATE_API = "https://senatestockwatcher.com/api/transactions";
+const HOUSE_S3 =
+  "https://house-stock-watcher-data.s3-us-west-2.amazonaws.com/data/all_transactions.json";
+const HOUSE_FALLBACK = "https://housestockwatcher.com/api";
+
+const SENATE_GITHUB =
+  "https://raw.githubusercontent.com/timothycarambat/senate-stock-watcher-data/master/all_ticker_transactions.json";
+const SENATE_FALLBACK = "https://senatestockwatcher.com/api/transactions";
 
 const HEADERS = {
   "User-Agent": "StockWhaleTracker/1.0 (personal finance tracker)",
@@ -39,40 +49,89 @@ export interface SenateTrade {
   disclosure_date?: string;
 }
 
+function dateCutoff(monthsBack = 12): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() - monthsBack);
+  return d.toISOString().split("T")[0];
+}
+
+// ── House trades ─────────────────────────────────────────────────────────────
+// Primary: S3 bucket (not IP-blocked). Fallback: housestockwatcher.com/api.
 export async function fetchHouseTrades(): Promise<HouseTrade[]> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20_000);
+  const cutoff = dateCutoff(12);
+
+  for (const url of [HOUSE_S3, HOUSE_FALLBACK]) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20_000);
+      const res = await fetch(url, {
+        headers: HEADERS,
+        signal: controller.signal,
+        next: { revalidate: 0 },
+      });
+      clearTimeout(timeout);
+      if (!res.ok) continue;
+
+      const raw = await res.json();
+      const all: HouseTrade[] = Array.isArray(raw) ? raw : (raw.data ?? []);
+      // Filter to last 12 months to keep payload manageable
+      return all.filter((t) => (t.transaction_date ?? "") >= cutoff);
+    } catch {
+      // try next source
+    }
+  }
+
+  return [];
+}
+
+// ── Senate trades ─────────────────────────────────────────────────────────────
+// Primary: GitHub raw CDN (indexed by ticker — fast and reliable from Vercel).
+// Fallback: senatestockwatcher.com/api/transactions.
+export async function fetchSenateTrades(): Promise<SenateTrade[]> {
+  const cutoff = dateCutoff(12);
+
+  // Try GitHub CDN first — returns { TICKER: SenateTrade[] }
   try {
-    const res = await fetch(HOUSE_API, {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25_000);
+    const res = await fetch(SENATE_GITHUB, {
       headers: HEADERS,
       signal: controller.signal,
       next: { revalidate: 0 },
     });
-    if (!res.ok) throw new Error(`House Stock Watcher error: ${res.status}`);
-    const raw = await res.json();
-    // API returns array directly or wrapped in { data: [] }
-    return Array.isArray(raw) ? raw : (raw.data ?? []);
-  } finally {
     clearTimeout(timeout);
+
+    if (res.ok) {
+      const indexed = (await res.json()) as Record<string, SenateTrade[]>;
+      // Flatten all tickers, normalise field names, filter to cutoff
+      return Object.entries(indexed).flatMap(([ticker, trades]) =>
+        (trades ?? []).map((t) => ({ ...t, ticker: ticker.toUpperCase() }))
+      ).filter((t) => (t.transaction_date ?? "") >= cutoff);
+    }
+  } catch {
+    // fall through to fallback
+  }
+
+  // Fallback: direct API
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20_000);
+    const res = await fetch(SENATE_FALLBACK, {
+      headers: HEADERS,
+      signal: controller.signal,
+      next: { revalidate: 0 },
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return [];
+    const raw = await res.json();
+    const all: SenateTrade[] = Array.isArray(raw) ? raw : (raw.data ?? []);
+    return all.filter((t) => (t.transaction_date ?? "") >= cutoff);
+  } catch {
+    return [];
   }
 }
 
-export async function fetchSenateTrades(): Promise<SenateTrade[]> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20_000);
-  try {
-    const res = await fetch(SENATE_API, {
-      headers: HEADERS,
-      signal: controller.signal,
-      next: { revalidate: 0 },
-    });
-    if (!res.ok) throw new Error(`Senate Stock Watcher error: ${res.status}`);
-    const raw = await res.json();
-    return Array.isArray(raw) ? raw : (raw.data ?? []);
-  } finally {
-    clearTimeout(timeout);
-  }
-}
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 // Parse "$1,001 - $15,000" style range strings → midpoint in cents
 export function parseAmountRange(amountStr: string | undefined | null): number | null {
@@ -102,7 +161,6 @@ export function isSenatePurchase(type: string): boolean {
 export function normalizeTicker(raw: string | undefined | null): string | null {
   if (!raw) return null;
   const t = raw.trim().replace(/^\$/, "").toUpperCase();
-  // "--" means the asset is not a publicly traded stock
   if (t === "--" || t === "" || t.length > 5) return null;
   return t;
 }
