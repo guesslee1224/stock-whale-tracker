@@ -132,7 +132,7 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
           <div
             className="grid gap-4 px-4 py-2.5"
             style={{
-              gridTemplateColumns: "minmax(120px,1.8fr) minmax(140px,3fr) 110px 130px 28px",
+              gridTemplateColumns: "minmax(120px,1.8fr) minmax(140px,3fr) 160px 130px 28px",
               background: "rgba(6, 13, 26, 0.9)",
               borderBottom: "1px solid #1A2D4A",
             }}
@@ -159,7 +159,7 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
                 key={id}
                 className="group grid gap-4 px-4 py-3 items-center transition-colors duration-150"
                 style={{
-                  gridTemplateColumns: "minmax(120px,1.8fr) minmax(140px,3fr) 110px 130px 90px 28px",
+                  gridTemplateColumns: "minmax(120px,1.8fr) minmax(140px,3fr) 160px 130px 28px",
                   background: i % 2 === 0 ? "rgba(10, 22, 40, 0.65)" : "rgba(6, 13, 26, 0.55)",
                   borderBottom: i < tickers.length - 1 ? "1px solid rgba(26, 45, 74, 0.4)" : "none",
                   opacity: isRemoving ? 0.35 : 1,
