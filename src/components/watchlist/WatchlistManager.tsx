@@ -144,7 +144,9 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
                 style={{
                   color: "#3A5070",
                   display: "flex",
-                  justifyContent: i >= 2 ? "flex-end" : "flex-start",
+                  // Signals (i=2) aligns left so header sits above the first badge;
+                  // Last Trade (i=3) and the empty remove column (i=4) stay right.
+                  justifyContent: i === 2 ? "flex-start" : i >= 3 ? "flex-end" : "flex-start",
                 }}
               >
                 {h}
@@ -201,7 +203,7 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
                 </span>
 
                 {/* ── Signals ── */}
-                <div className="flex w-full items-center justify-end gap-1.5">
+                <div className="flex w-full items-center justify-start gap-1.5">
                   {stats && stats.total > 0 ? (
                     <>
                       {stats.buys > 0 && (
