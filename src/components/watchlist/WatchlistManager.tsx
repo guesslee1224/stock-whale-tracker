@@ -23,10 +23,6 @@ function formatDate(dateStr: string | null): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function formatAddedDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" });
-}
 
 export function WatchlistManager({ initialTickers, activityStats = {} }: Props) {
   const [tickers, setTickers] = useState(initialTickers);
@@ -136,12 +132,12 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
           <div
             className="grid gap-4 px-4 py-2.5"
             style={{
-              gridTemplateColumns: "minmax(120px,1.8fr) minmax(140px,3fr) 110px 130px 90px 28px",
+              gridTemplateColumns: "minmax(120px,1.8fr) minmax(140px,3fr) 110px 130px 28px",
               background: "rgba(6, 13, 26, 0.9)",
               borderBottom: "1px solid #1A2D4A",
             }}
           >
-            {(["Symbol", "Company", "Signals", "Last Trade", "Added", ""] as const).map((h, i) => (
+            {(["Symbol", "Company", "Signals", "Last Trade", ""] as const).map((h, i) => (
               <span
                 key={h || i}
                 className="text-[10px] font-semibold tracking-widest uppercase"
@@ -153,7 +149,7 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
           </div>
 
           {/* Rows */}
-          {tickers.map(({ id, ticker, company_name, added_at }, i) => {
+          {tickers.map(({ id, ticker, company_name }, i) => {
             const stats = activityStats[ticker];
             const isTemp = id.startsWith("temp-");
             const isRemoving = removingId === id;
@@ -242,11 +238,6 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
                   style={{ color: stats?.last_trade ? "#8097B4" : "#3A5070" }}
                 >
                   {stats?.last_trade ? formatDate(stats.last_trade) : "—"}
-                </span>
-
-                {/* ── Added ── */}
-                <span className="text-[11px] font-mono text-right tabular-nums" style={{ color: "#3A5070" }}>
-                  {formatAddedDate(added_at)}
                 </span>
 
                 {/* ── Remove ── */}
