@@ -141,7 +141,11 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
               <span
                 key={h || i}
                 className="text-[10px] font-semibold tracking-widest uppercase"
-                style={{ color: "#3A5070", textAlign: i >= 2 ? "right" : "left" }}
+                style={{
+                  color: "#3A5070",
+                  display: "flex",
+                  justifyContent: i >= 2 ? "flex-end" : "flex-start",
+                }}
               >
                 {h}
               </span>
@@ -197,7 +201,7 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
                 </span>
 
                 {/* ── Signals ── */}
-                <div className="flex items-center justify-end gap-1.5">
+                <div className="flex w-full items-center justify-end gap-1.5">
                   {stats && stats.total > 0 ? (
                     <>
                       {stats.buys > 0 && (
