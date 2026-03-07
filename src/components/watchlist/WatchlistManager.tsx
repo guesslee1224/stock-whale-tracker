@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { addToWatchlist, removeFromWatchlist } from "@/actions/watchlist";
-import { XIcon, PlusIcon, Loader2Icon, TrendingUpIcon, TrendingDownIcon } from "lucide-react";
+import { XIcon, PlusIcon, Loader2Icon, TrendingUpIcon, TrendingDownIcon, RefreshCwIcon } from "lucide-react";
 import type { WatchlistRow } from "@/types/database.types";
 
 interface ActivityStat {
@@ -30,6 +30,7 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [syncingTicker, setSyncingTicker] = useState<string | null>(null);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -52,6 +53,14 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
       if (result.error) {
         setTickers((prev) => prev.filter((t) => t.id !== tempRow.id));
         setError(result.error);
+      } else {
+        // Auto-sync the new ticker in the background — no need to wait
+        setSyncingTicker(ticker);
+        fetch("/api/sync/ticker", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ticker }),
+        }).finally(() => setSyncingTicker(null));
       }
     });
   }
@@ -190,6 +199,12 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
 
                   {isTemp && (
                     <Loader2Icon className="h-3 w-3 animate-spin flex-shrink-0" style={{ color: "#8097B4" }} />
+                  )}
+                  {!isTemp && syncingTicker === ticker && (
+                    <span className="flex items-center gap-1 text-[9px] font-semibold tracking-wider flex-shrink-0" style={{ color: "#8097B4" }}>
+                      <RefreshCwIcon className="h-2.5 w-2.5 animate-spin" />
+                      Syncing
+                    </span>
                   )}
                 </div>
 

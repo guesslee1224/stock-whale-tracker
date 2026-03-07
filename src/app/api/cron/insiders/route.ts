@@ -26,13 +26,23 @@ export async function GET(request: NextRequest) {
   let totalNew = 0;
   const errors: string[] = [];
 
-  const { data: watchlist } = await supabase
+  // Optional ?ticker= param — when set, only process that one symbol
+  const tickerParam = request.nextUrl.searchParams.get("ticker")?.toUpperCase() ?? null;
+
+  let { data: watchlist } = await supabase
     .from("watchlist")
     .select("ticker")
     .eq("is_active", true);
 
   if (!watchlist?.length) {
     return NextResponse.json({ message: "Watchlist is empty", new: 0 });
+  }
+
+  if (tickerParam) {
+    watchlist = watchlist.filter((w) => w.ticker === tickerParam);
+    if (!watchlist.length) {
+      return NextResponse.json({ message: `${tickerParam} not in watchlist`, new: 0 });
+    }
   }
 
   for (const { ticker } of watchlist) {
