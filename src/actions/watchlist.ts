@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getCompanyTitleForTicker } from "@/lib/api-clients/sec-edgar";
 
 // Validates a ticker symbol format (1-5 uppercase letters)
 function isValidTicker(ticker: string): boolean {
@@ -16,8 +17,11 @@ export async function addToWatchlist(ticker: string): Promise<{ error?: string }
     return { error: "Invalid ticker symbol. Use 1–5 letters (e.g. AAPL, TSLA)." };
   }
 
+  // Resolve company name from SEC EDGAR (free, no key required)
+  const company_name = await getCompanyTitleForTicker(upperTicker).catch(() => null);
+
   const { error } = await supabase.from("watchlist").upsert(
-    { ticker: upperTicker, is_active: true },
+    { ticker: upperTicker, is_active: true, company_name: company_name ?? null },
     { onConflict: "ticker" }
   );
 
