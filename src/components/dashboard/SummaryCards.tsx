@@ -1,9 +1,10 @@
-import { TrendingUpIcon, UsersIcon, ActivityIcon, BellIcon } from "lucide-react";
-import type { ActivityRow } from "@/types/database.types";
-import { formatCents } from "@/lib/utils/format";
+import { TrendingUpIcon, TrendingDownIcon, UsersIcon, BellIcon } from "lucide-react";
 
 interface Props {
-  activity: ActivityRow[];
+  buyCount: number;
+  sellCount: number;
+  congressCount: number;
+  insiderCount: number;
   alertsSentToday: number;
 }
 
@@ -17,43 +18,30 @@ interface CardConfig {
   iconBg: string;
 }
 
-export function SummaryCards({ activity, alertsSentToday }: Props) {
-  const buyActivity = activity.filter((a) =>
-    ["buy", "new_position", "increase"].includes(a.activity_type)
-  );
-
-  const totalValue = buyActivity.reduce(
-    (sum, a) => sum + (a.value_usd ?? 0),
-    0
-  );
-
-  const uniqueTickers = new Set(buyActivity.map((a) => a.ticker)).size;
-
-  const congressCount = activity.filter((a) => a.actor_type === "congress").length;
-
+export function SummaryCards({ buyCount, sellCount, congressCount, insiderCount, alertsSentToday }: Props) {
   const cards: CardConfig[] = [
     {
-      title: "Buy Volume",
-      value: formatCents(totalValue),
-      description: "30-day inflow",
+      title: "Buy Signals",
+      value: buyCount.toLocaleString(),
+      description: `30-day inflow · ${insiderCount.toLocaleString()} insider`,
       icon: TrendingUpIcon,
       accent: "#00E87A",
       glow: "rgba(0, 232, 122, 0.12)",
       iconBg: "rgba(0, 232, 122, 0.1)",
     },
     {
-      title: "Active Tickers",
-      value: uniqueTickers.toString(),
-      description: "With whale activity",
-      icon: ActivityIcon,
-      accent: "#38BDF8",
-      glow: "rgba(56, 189, 248, 0.12)",
-      iconBg: "rgba(56, 189, 248, 0.1)",
+      title: "Sell Signals",
+      value: sellCount.toLocaleString(),
+      description: "30-day outflow",
+      icon: TrendingDownIcon,
+      accent: "#FF4D6D",
+      glow: "rgba(255, 77, 109, 0.12)",
+      iconBg: "rgba(255, 77, 109, 0.1)",
     },
     {
       title: "Congress Trades",
-      value: congressCount.toString(),
-      description: "Buy trades tracked",
+      value: congressCount.toLocaleString(),
+      description: "30-day disclosures",
       icon: UsersIcon,
       accent: "#FFB800",
       glow: "rgba(255, 184, 0, 0.12)",
@@ -61,8 +49,8 @@ export function SummaryCards({ activity, alertsSentToday }: Props) {
     },
     {
       title: "Alerts Today",
-      value: alertsSentToday.toString(),
-      description: "Push notifications",
+      value: alertsSentToday.toLocaleString(),
+      description: "Push notifications sent",
       icon: BellIcon,
       accent: "#A78BFA",
       glow: "rgba(167, 139, 250, 0.12)",
