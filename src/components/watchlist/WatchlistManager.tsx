@@ -186,28 +186,8 @@ export function WatchlistManager({ initialTickers, activityStats = {} }: Props) 
                     {ticker}
                   </span>
 
-                  {isTemp ? (
+                  {isTemp && (
                     <Loader2Icon className="h-3 w-3 animate-spin flex-shrink-0" style={{ color: "#8097B4" }} />
-                  ) : (
-                    /* Live pill */
-                    <span
-                      className="inline-flex items-center gap-1 flex-shrink-0 text-[9px] font-bold tracking-widest uppercase rounded px-1.5 py-0.5"
-                      style={{
-                        background: "rgba(0, 232, 122, 0.08)",
-                        color: "#00E87A",
-                        border: "1px solid rgba(0, 232, 122, 0.18)",
-                      }}
-                    >
-                      <span
-                        className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                        style={{
-                          background: "#00E87A",
-                          boxShadow: "0 0 4px #00E87A",
-                          animation: "pulse 2s ease-in-out infinite",
-                        }}
-                      />
-                      LIVE
-                    </span>
                   )}
                 </div>
 
