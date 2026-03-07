@@ -9,6 +9,7 @@ export default async function DashboardPage() {
   const supabase = await getSupabaseServerClient();
 
   // Use fetched_at so 13F filings (which report Q4 dates) still appear in the dashboard
+  // eslint-disable-next-line react-hooks/purity
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
   const todayStart = new Date();

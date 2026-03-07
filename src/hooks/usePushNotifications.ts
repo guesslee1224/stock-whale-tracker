@@ -16,15 +16,18 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 export type PushState = "unsupported" | "prompt" | "denied" | "subscribed" | "loading";
 
 export function usePushNotifications() {
-  const [state, setState] = useState<PushState>("loading");
+  const [state, setState] = useState<PushState>(() => {
+    // Detect push support once at initialisation — avoids synchronous setState in effect
+    if (typeof window !== "undefined" && (!("serviceWorker" in navigator) || !("PushManager" in window))) {
+      return "unsupported";
+    }
+    return "loading";
+  });
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-      setState("unsupported");
-      return;
-    }
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
 
     // Check current permission + subscription status
     (async () => {

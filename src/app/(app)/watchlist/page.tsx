@@ -39,7 +39,7 @@ export default async function WatchlistPage() {
 
   // Fetch activity stats per ticker — use parallel count queries to avoid
   // the Supabase default 1 000-row limit that would corrupt aggregate counts.
-  let activityStats: Record<string, { total: number; buys: number; sells: number; last_trade: string | null }> = {};
+  const activityStats: Record<string, { total: number; buys: number; sells: number; last_trade: string | null }> = {};
 
   if (tickerList.length > 0) {
     const BUY_TYPES  = ["buy", "increase", "new_position"];
