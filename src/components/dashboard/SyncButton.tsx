@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { RefreshCwIcon } from "lucide-react";
 
 type SyncState = "idle" | "syncing" | "done" | "error";
 
@@ -19,9 +20,7 @@ export function SyncButton() {
       if (!res.ok) throw new Error(data.error ?? "Sync failed");
       setNewCount(data.totalNew ?? 0);
       setState("done");
-      // Refresh server component data so dashboard shows new records
       router.refresh();
-      // Reset button label after 4 seconds
       setTimeout(() => setState("idle"), 4000);
     } catch {
       setState("error");
@@ -30,31 +29,44 @@ export function SyncButton() {
   }
 
   const label = {
-    idle: "Sync Now",
+    idle: "Sync",
     syncing: "Syncing…",
-    done: newCount != null ? `Done · ${newCount} new` : "Done",
-    error: "Sync failed",
+    done: newCount != null ? `+${newCount} new` : "Done",
+    error: "Failed",
   }[state];
 
-  const colors = {
-    idle: "bg-primary text-primary-foreground hover:bg-primary/90",
-    syncing: "bg-muted text-muted-foreground cursor-wait",
-    done: "bg-green-600 text-white",
-    error: "bg-destructive text-destructive-foreground",
-  }[state];
+  const stateStyles: Record<SyncState, React.CSSProperties> = {
+    idle: {
+      background: "rgba(0, 232, 122, 0.1)",
+      color: "#00E87A",
+      boxShadow: "inset 0 0 0 1px rgba(0, 232, 122, 0.3)",
+    },
+    syncing: {
+      background: "rgba(128, 151, 180, 0.08)",
+      color: "#8097B4",
+      boxShadow: "inset 0 0 0 1px #1A2D4A",
+      cursor: "wait",
+    },
+    done: {
+      background: "rgba(0, 232, 122, 0.15)",
+      color: "#00E87A",
+      boxShadow: "inset 0 0 0 1px rgba(0, 232, 122, 0.4)",
+    },
+    error: {
+      background: "rgba(255, 77, 109, 0.1)",
+      color: "#FF4D6D",
+      boxShadow: "inset 0 0 0 1px rgba(255, 77, 109, 0.3)",
+    },
+  };
 
   return (
     <button
       onClick={handleSync}
       disabled={state === "syncing"}
-      className={[
-        "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors",
-        colors,
-      ].join(" ")}
+      className="flex items-center gap-2 px-3.5 py-2 rounded text-[11px] font-medium tracking-wide uppercase transition-all duration-150"
+      style={stateStyles[state]}
     >
-      {state === "syncing" && (
-        <span className="inline-block w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-      )}
+      <RefreshCwIcon className={`h-3.5 w-3.5 ${state === "syncing" ? "animate-spin" : ""}`} />
       {label}
     </button>
   );

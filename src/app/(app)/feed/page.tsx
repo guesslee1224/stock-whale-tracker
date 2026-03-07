@@ -7,11 +7,36 @@ export const dynamic = "force-dynamic";
 export default async function FeedPage() {
   const supabase = await getSupabaseServerClient();
 
-  const { data: activity } = await supabase
-    .from("institutional_activity")
-    .select("*")
-    .order("fetched_at", { ascending: false })
-    .limit(500);
+  // Query each source group separately so institutional 13F volume
+  // can never crowd out insider or congress records.
+  const [insidersResult, institutionsResult, congressResult] = await Promise.allSettled([
+    supabase
+      .from("institutional_activity")
+      .select("*")
+      .in("source", ["sec_form4", "quiver_insider"])
+      .order("fetched_at", { ascending: false })
+      .limit(300),
+
+    supabase
+      .from("institutional_activity")
+      .select("*")
+      .in("source", ["sec_13f", "quiver_institutional"])
+      .order("fetched_at", { ascending: false })
+      .limit(1000),
+
+    supabase
+      .from("institutional_activity")
+      .select("*")
+      .in("source", ["house_congress", "senate_congress", "quiver_congress"])
+      .order("fetched_at", { ascending: false })
+      .limit(300),
+  ]);
+
+  const activity = [
+    ...(insidersResult.status === "fulfilled" ? (insidersResult.value.data ?? []) : []),
+    ...(institutionsResult.status === "fulfilled" ? (institutionsResult.value.data ?? []) : []),
+    ...(congressResult.status === "fulfilled" ? (congressResult.value.data ?? []) : []),
+  ];
 
   return (
     <div className="p-4 md:p-8 space-y-6 max-w-3xl mx-auto">
@@ -25,7 +50,7 @@ export default async function FeedPage() {
         <SyncButton />
       </div>
 
-      <ActivityFeed initialItems={activity ?? []} />
+      <ActivityFeed initialItems={activity} />
     </div>
   );
 }
